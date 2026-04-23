@@ -1,15 +1,30 @@
 version: '3.8'
 
 services:
-  frontend:
-    image: ghcr.io/${REPO_NAME}/frontend:latest
+  # --- The Gatekeeper (Reverse Proxy) ---
+  traefik:
+    image: traefik:v2.10
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.swarmMode=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
     ports:
       - "80:80"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+
+  # --- Your App (Now with Zero-Downtime support) ---
+  frontend:
+    image: ghcr.io/${REPO_NAME}/frontend:latest
+    # No direct ports! Traefik will handle the traffic
     depends_on:
       - backend
-    restart: always
     healthcheck:
-      # Use wget (must work in nginx:alpine)
       test: ["CMD-SHELL", "wget -q --spider http://localhost/ || exit 1"]
       interval: 10s
       timeout: 5s
@@ -18,13 +33,13 @@ services:
       replicas: 1
       update_config:
         parallelism: 1
-        # Reverting to start-first as requested
         order: start-first
         failure_action: rollback
         delay: 5s
-      rollback_config:
-        parallelism: 1
-        order: stop-first
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.frontend.rule=PathPrefix(`/`)"
+        - "traefik.http.services.frontend.loadbalancer.server.port=80"
 
   backend:
     image: ghcr.io/${REPO_NAME}/backend:latest
@@ -32,7 +47,6 @@ services:
       - REDIS_HOST=db
     depends_on:
       - db
-    restart: always
     healthcheck:
       test: ["CMD-SHELL", "nc -z localhost 5000 || exit 1"]
       interval: 10s
@@ -45,12 +59,8 @@ services:
         order: start-first
         failure_action: rollback
         delay: 5s
-      rollback_config:
-        parallelism: 1
-        order: stop-first
 
   db:
     image: redis:alpine
-    restart: always
     deploy:
       replicas: 1
