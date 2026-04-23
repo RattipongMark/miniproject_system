@@ -10,6 +10,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      
+      - name: Convert repository name to lowercase
+        run: echo "REPO_LOWER=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v2
@@ -23,14 +27,14 @@ jobs:
         with:
           context: ./app/backend
           push: true
-          tags: ghcr.io/${{ github.repository }}/backend:latest
+          tags: ghcr.io/${{ env.REPO_LOWER }}/backend:latest
 
       - name: Build and push Frontend
         uses: docker/build-push-action@v4
         with:
           context: ./app/frontend
           push: true
-          tags: ghcr.io/${{ github.repository }}/frontend:latest
+          tags: ghcr.io/${{ env.REPO_LOWER }}/frontend:latest
 
   # 2. Provision Infrastructure and Configure Server
   provision-and-config:
@@ -38,6 +42,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+
+      - name: Convert repository name to lowercase
+        run: echo "REPO_LOWER=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+
 
       - name: Azure Login
         uses: azure/login@v1
@@ -81,7 +89,7 @@ jobs:
           # Execute Deployment
           ssh -o StrictHostKeyChecking=no -i private_key.pem starkadmin@${{ steps.terraform.outputs.PUBLIC_IP }} "
             # Tag current containers as 'previous' for rollback
-            docker tag ghcr.io/${{ github.repository }}/frontend:latest ghcr.io/${{ github.repository }}/frontend:previous || true
+            docker tag ghcr.io/${{ env.REPO_LOWER }}/frontend:latest ghcr.io/${{ env.REPO_LOWER }}/frontend:previous || true
             
             # Pull and run new versions
             docker compose pull
@@ -92,7 +100,7 @@ jobs:
             sleep 20
             if ! curl -s -f http://localhost/health > /dev/null; then
               echo 'ALERT: Health check failed! Rolling back...'
-              docker tag ghcr.io/${{ github.repository }}/frontend:previous ghcr.io/${{ github.repository }}/frontend:latest
+              docker tag ghcr.io/${{ env.REPO_LOWER }}/frontend:previous ghcr.io/${{ env.REPO_LOWER }}/frontend:latest
               docker compose up -d
               exit 1
             fi
