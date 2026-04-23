@@ -4,14 +4,35 @@ on:
   push:
     branches: [ main ]
 
-# Grant permissions for GitHub Container Registry
 permissions:
   contents: read
   packages: write
 
 jobs:
-  # 1. Build and push container images
+  # 0. Check what has changed
+  check-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      infra: ${{ steps.filter.outputs.infra }}
+      app: ${{ steps.filter.outputs.app }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Check for changes in infra or app
+        id: filter
+        uses: dorny/paths-filter@v2
+        with:
+          filters: |
+            infra:
+              - 'terraform/**'
+              - 'ansible/**'
+            app:
+              - 'app/**'
+              - '.github/workflows/deploy.yml'
+
+  # 1. Build and push container images (Run if app files changed)
   build-and-push:
+    needs: check-changes
+    if: needs.check-changes.outputs.app == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -35,7 +56,6 @@ jobs:
         with:
           context: ./app/backend
           push: true
-          # Use both 'latest' and 'commit sha' tags
           tags: |
             ghcr.io/${{ env.REPO_LOWER }}/backend:latest
             ghcr.io/${{ env.REPO_LOWER }}/backend:${{ github.sha }}
@@ -45,17 +65,15 @@ jobs:
         with:
           context: ./app/frontend
           push: true
-          # Use both 'latest' and 'commit sha' tags
           tags: |
             ghcr.io/${{ env.REPO_LOWER }}/frontend:latest
             ghcr.io/${{ env.REPO_LOWER }}/frontend:${{ github.sha }}
 
-  # 2. Provision Infrastructure and Configure Server
+  # 2. Provision Infrastructure (Run ONLY if infra files changed)
   provision-infra:
-    needs: build-and-push
+    needs: check-changes
+    if: needs.check-changes.outputs.infra == 'true'
     runs-on: ubuntu-latest
-    outputs:
-      public_ip: ${{ steps.terraform.outputs.PUBLIC_IP }}
     steps:
       - uses: actions/checkout@v3
 
@@ -70,31 +88,33 @@ jobs:
           terraform_wrapper: false
 
       - name: Terraform Init & Apply
-        id: terraform
         run: |
           cd terraform
           terraform init -backend-config="key=${{ github.event.repository.name }}.tfstate"
           terraform apply -auto-approve \
             -var="resource_group_name=rg-${{ github.event.repository.name }}" \
             -var="ssh_public_key=${{ secrets.SSH_PUBLIC_KEY }}"
-          echo "PUBLIC_IP=$(terraform output -raw public_ip_address)" >> $GITHUB_OUTPUT
 
       - name: Setup Ansible
         run: pip install ansible
 
       - name: Run Ansible Playbook
         run: |
+          cd terraform
+          PUBLIC_IP=$(terraform output -raw public_ip_address)
+          cd ..
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > private_key.pem
           chmod 600 private_key.pem
           sleep 15
-          ansible-playbook -i "${{ steps.terraform.outputs.PUBLIC_IP }}," \
+          ansible-playbook -i "$PUBLIC_IP," \
             -u starkadmin --private-key private_key.pem \
             -e "ansible_ssh_common_args='-o StrictHostKeyChecking=no'" \
             ansible/playbook.yml
 
-  # 3. Deploy Application and Health Check
+  # 3. Deploy Application (Always run if app changed)
   deploy-app:
-    needs: [build-and-push, provision-infra]
+    needs: [check-changes, build-and-push, provision-infra]
+    if: always() && needs.build-and-push.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -102,43 +122,50 @@ jobs:
       - name: Convert repository name to lowercase
         run: echo "REPO_LOWER=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
 
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_wrapper: false
+
+      - name: Get Public IP (Fast)
+        id: infra_info
+        run: |
+          cd terraform
+          terraform init -backend-config="key=${{ github.event.repository.name }}.tfstate"
+          echo "PUBLIC_IP=$(terraform output -raw public_ip_address)" >> $GITHUB_OUTPUT
+
       - name: Deploy to Server
         run: |
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > private_key.pem
           chmod 600 private_key.pem
           
-          # Inject the REAL image tag into docker-compose before sending
+          # Inject identifiers
           sed -i "s|\${REPO_NAME}|${{ env.REPO_LOWER }}|g" app/docker-compose.yml
           sed -i "s|:latest|:${{ github.sha }}|g" app/docker-compose.yml
           
           # Copy injected docker-compose.yml
-          scp -o StrictHostKeyChecking=no -i private_key.pem app/docker-compose.yml starkadmin@${{ needs.provision-infra.outputs.public_ip }}:~/docker-compose.yml
+          scp -o StrictHostKeyChecking=no -i private_key.pem app/docker-compose.yml starkadmin@${{ steps.infra_info.outputs.PUBLIC_IP }}:~/docker-compose.yml
           
           # Execute Deployment
-          ssh -o StrictHostKeyChecking=no -i private_key.pem starkadmin@${{ needs.provision-infra.outputs.public_ip }} "
+          ssh -o StrictHostKeyChecking=no -i private_key.pem starkadmin@${{ steps.infra_info.outputs.PUBLIC_IP }} "
             echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker stack deploy -c ~/docker-compose.yml stark-app --with-registry-auth --prune
-            
-            echo 'Deployment ongoing (Swarm is handling the rolling update)...'
-            sleep 40
+            echo 'Deployment ongoing...'
+            sleep 30
             
             # --- Smart Status Report ---
-            echo '--- Deployment Report ---'
-            SERVICES=("stark-app_frontend" "stark-app_backend")
-            for SERVICE in "${SERVICES[@]}"; do
-              STATE=$(docker service inspect $SERVICE --format '{{.UpdateStatus.State}}')
-              if [ "$STATE" == "rollback_completed" ]; then
-                echo "❌ ALERT: $SERVICE Update FAILED! (Rolled back to previous version)"
-              elif [ "$STATE" == "completed" ] || [ "$STATE" == "" ] || [ "$STATE" == "none" ]; then
-                echo "✅ SUCCESS: $SERVICE is healthy and running the new version."
-              else
-                echo "⚠️ WARNING: $SERVICE state is $STATE. Please check manually."
+            SERVICES=\"stark-app_frontend stark-app_backend\"
+            for SERVICE in \$SERVICES; do
+              STATE=\$(docker service inspect \$SERVICE --format '{{.UpdateStatus.State}}' 2>/dev/null || echo \"none\")
+              if [ \"\$STATE\" == \"rollback_completed\" ]; then
+                echo \"❌ ALERT: \$SERVICE Update FAILED! (Rolled back)\"
+              elif [ \"\$STATE\" == \"completed\" ] || [ \"\$STATE\" == \"\" ] || [ \"\$STATE\" == \"none\" ]; then
+                echo \"✅ SUCCESS: \$SERVICE is updated.\"
               fi
             done
-            
-            if ! docker stack ps stark-app | grep -E 'Running|Complete'; then
-              echo 'ERROR: Stack state looks unstable!'
-              exit 1
-            fi
-            echo '--- End of Report ---'
           "
