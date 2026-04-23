@@ -4,7 +4,13 @@ on:
   push:
     branches: [ main ]
 
+# Grant permissions for GitHub Container Registry
+permissions:
+  contents: read
+  packages: write
+
 jobs:
+
   # 1. Build and push container images
   build-and-push:
     runs-on: ubuntu-latest
