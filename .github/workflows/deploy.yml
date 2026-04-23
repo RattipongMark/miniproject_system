@@ -100,27 +100,23 @@ jobs:
           # Copy docker-compose.yml
           scp -o StrictHostKeyChecking=no -i private_key.pem app/docker-compose.yml starkadmin@${{ needs.provision-infra.outputs.public_ip }}:~/docker-compose.yml
           
-          # Execute Deployment
+          # Execute Deployment via Docker Swarm
           ssh -o StrictHostKeyChecking=no -i private_key.pem starkadmin@${{ needs.provision-infra.outputs.public_ip }} "
-            # Login to GHCR so the VM can pull private images
+            # Login to GHCR (required for Swarm to pull images)
             echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-            # Tag current containers as 'previous' for rollback
-            docker tag ghcr.io/${{ env.REPO_LOWER }}/frontend:latest ghcr.io/${{ env.REPO_LOWER }}/frontend:previous || true
-            
-            # Pull and run new versions using the lowercase repo name
+            # Deploy or update the stack
             export REPO_NAME=${{ env.REPO_LOWER }}
-            docker compose pull
-            docker compose up -d
+            docker stack deploy -c ~/docker-compose.yml stark-app --with-registry-auth --prune
             
-            # Health Check
-            echo 'Waiting for health check...'
-            sleep 20
-            if ! curl -s -f http://localhost/health > /dev/null; then
-              echo 'ALERT: Health check failed! Rolling back...'
-              docker tag ghcr.io/${{ env.REPO_LOWER }}/frontend:previous ghcr.io/${{ env.REPO_LOWER }}/frontend:latest
-              docker compose up -d
+            # Wait for the service to be stable (Zero Downtime in progress)
+            echo 'Deployment ongoing (Swarm is handling the rolling update)...'
+            sleep 30
+            
+            # Final Status Check
+            if ! docker stack ps stark-app | grep -E 'Running|Complete'; then
+              echo 'ALERT: Deployment state looks unstable!'
               exit 1
             fi
-            echo 'Deployment successful!'
+            echo 'Deployment successful and stable!'
           "

@@ -40,3 +40,13 @@
     name: starkadmin
     groups: docker
     append: yes
+
+- name: Check if Docker Swarm is initialized
+  shell: docker info | grep -q "Swarm..active"
+  register: swarm_status
+  ignore_errors: yes
+  changed_when: false
+
+- name: Initialize Docker Swarm
+  shell: docker swarm init --advertise-addr {{ ansible_default_ipv4.address }}
+  when: swarm_status.rc != 0

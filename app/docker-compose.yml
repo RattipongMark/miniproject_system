@@ -8,6 +8,21 @@ services:
     depends_on:
       - backend
     restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      replicas: 1
+      update_config:
+        parallelism: 1
+        order: start-first
+        failure_action: rollback
+        delay: 5s
+      rollback_config:
+        parallelism: 1
+        order: stop-first
 
   backend:
     image: ghcr.io/${REPO_NAME}/backend:latest
@@ -16,7 +31,20 @@ services:
     depends_on:
       - db
     restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 5000 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      replicas: 1
+      update_config:
+        parallelism: 1
+        order: start-first
+        failure_action: rollback
 
   db:
     image: redis:alpine
     restart: always
+    deploy:
+      replicas: 1
