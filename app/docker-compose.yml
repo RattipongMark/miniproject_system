@@ -42,6 +42,10 @@ services:
         parallelism: 1
         order: start-first
         failure_action: rollback
+        delay: 5s
+      rollback_config:
+        parallelism: 1
+        order: stop-first
 
   db:
     image: redis:alpine
