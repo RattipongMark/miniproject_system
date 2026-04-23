@@ -10,7 +10,7 @@ terraform {
     resource_group_name  = "tfstate-rg"
     storage_account_name = "tfstatemakk1776959829"
     container_name       = "tfstate"
-    key                  = "terraform.tfstate"
+    # key will be passed dynamically via -backend-config in GitHub Actions
   }
 }
 
