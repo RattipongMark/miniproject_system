@@ -10,7 +10,7 @@ permissions:
   packages: write
 
 jobs:
-  # 0. Check what has changed and if infra exists
+  # 0. Check changes and infra status
   check-changes:
     runs-on: ubuntu-latest
     outputs:
@@ -18,7 +18,6 @@ jobs:
       app_needed: ${{ steps.filter.outputs.app }}
     steps:
       - uses: actions/checkout@v3
-      
       - name: Check for file changes
         id: filter
         uses: dorny/paths-filter@v2
@@ -30,33 +29,26 @@ jobs:
             app:
               - 'app/**'
               - '.github/workflows/deploy.yml'
-
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Check if Resource Group exists on Azure
+      - name: Check Azure Status
         id: azure_check
         run: |
-          RG_NAME="rg-${{ github.event.repository.name }}"
-          EXISTS=$(az group exists --name $RG_NAME)
+          EXISTS=$(az group exists --name "rg-${{ github.event.repository.name }}")
           echo "exists=$EXISTS" >> $GITHUB_OUTPUT
-
-      - name: Decide if Infra job is needed
+      - name: Decide
         id: decide
         run: |
-          # Need infra if files changed OR RG is missing OR manually triggered
           if [ "${{ steps.filter.outputs.infra_files }}" == "true" ] || [ "${{ steps.azure_check.outputs.exists }}" == "false" ] || [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             echo "infra_needed=true" >> $GITHUB_OUTPUT
           else
             echo "infra_needed=false" >> $GITHUB_OUTPUT
           fi
 
-  # 1. Build and push container images
+  # 1. Build and push (ALWAYS RUN for SHA consistency)
   build-and-push:
-    needs: check-changes
-    if: needs.check-changes.outputs.app_needed == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -65,20 +57,24 @@ jobs:
       - name: Inject Version into HTML
         run: |
           sed -i "s/BUILD_VERSION/${GITHUB_SHA::7}/g" app/frontend/index.html
-      - name: Log in to GitHub Container Registry
+      - name: Log in to GHCR
         uses: docker/login-action@v2
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build and push images
+      - name: Build and push Backend
+        uses: docker/build-push-action@v4
+        with:
+          context: ./app/backend
+          push: true
+          tags: ghcr.io/${{ env.REPO_LOWER }}/backend:${{ github.sha }}
+      - name: Build and push Frontend
         uses: docker/build-push-action@v4
         with:
           context: ./app/frontend
           push: true
-          tags: |
-            ghcr.io/${{ env.REPO_LOWER }}/frontend:latest
-            ghcr.io/${{ env.REPO_LOWER }}/frontend:${{ github.sha }}
+          tags: ghcr.io/${{ env.REPO_LOWER }}/frontend:${{ github.sha }}
 
   # 2. Provision Infrastructure
   provision-infra:
@@ -93,33 +89,24 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
-        with:
-          terraform_wrapper: false
-      - name: Terraform Init & Apply
+      - name: Terraform Apply
         run: |
           cd terraform
           terraform init -backend-config="key=${{ github.event.repository.name }}.tfstate"
-          terraform apply -auto-approve \
-            -var="resource_group_name=rg-${{ github.event.repository.name }}" \
-            -var="ssh_public_key=${{ secrets.SSH_PUBLIC_KEY }}"
+          terraform apply -auto-approve -var="resource_group_name=rg-${{ github.event.repository.name }}" -var="ssh_public_key=${{ secrets.SSH_PUBLIC_KEY }}"
       - name: Setup Ansible
         run: pip install ansible
-      - name: Run Ansible Playbook
+      - name: Run Playbook
         run: |
-          cd terraform
-          PUBLIC_IP=$(terraform output -raw public_ip_address)
-          cd ..
+          PUBLIC_IP=$(cd terraform && terraform output -raw public_ip_address)
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > private_key.pem
           chmod 600 private_key.pem
-          sleep 15
-          ansible-playbook -i "$PUBLIC_IP," \
-            -u starkadmin --private-key private_key.pem -e "ansible_ssh_common_args='-o StrictHostKeyChecking=no'" \
-            ansible/playbook.yml
+          ansible-playbook -i "$PUBLIC_IP," -u starkadmin --private-key private_key.pem -e "ansible_ssh_common_args='-o StrictHostKeyChecking=no'" ansible/playbook.yml
 
   # 3. Deploy Application
   deploy-app:
-    needs: [check-changes, build-and-push, provision-infra]
-    if: always() && (needs.build-and-push.result == 'success' || needs.build-and-push.result == 'skipped')
+    needs: [build-and-push, provision-infra, check-changes]
+    if: always() && needs.build-and-push.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -129,36 +116,21 @@ jobs:
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
-        with:
-          terraform_wrapper: false
-      - name: Get Public IP
-        id: infra_info
+      - name: Get IP
+        id: ip
         run: |
           cd terraform
           terraform init -backend-config="key=${{ github.event.repository.name }}.tfstate"
           echo "PUBLIC_IP=$(terraform output -raw public_ip_address)" >> $GITHUB_OUTPUT
-      - name: Deploy to Server
+      - name: Deploy
         run: |
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > private_key.pem
           chmod 600 private_key.pem
           sed -i "s|\${REPO_NAME}|${{ env.REPO_LOWER }}|g" app/docker-compose.yml
           sed -i "s|:latest|:${{ github.sha }}|g" app/docker-compose.yml
-          scp -o StrictHostKeyChecking=no -i private_key.pem app/docker-compose.yml starkadmin@${{ steps.infra_info.outputs.PUBLIC_IP }}:~/docker-compose.yml
-          ssh -o StrictHostKeyChecking=no -i private_key.pem starkadmin@${{ steps.infra_info.outputs.PUBLIC_IP }} "
+          scp -o StrictHostKeyChecking=no -i private_key.pem app/docker-compose.yml starkadmin@${{ steps.ip.outputs.PUBLIC_IP }}:~/docker-compose.yml
+          ssh -o StrictHostKeyChecking=no -i private_key.pem starkadmin@${{ steps.ip.outputs.PUBLIC_IP }} "
             echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker stack deploy -c ~/docker-compose.yml stark-app --with-registry-auth --prune
-            echo 'Deployment ongoing...'
-            sleep 30
-            # Report
-            SERVICES=\"stark-app_frontend stark-app_backend\"
-            for SERVICE in \$SERVICES; do
-              STATE=\$(docker service inspect \$SERVICE --format '{{.UpdateStatus.State}}' 2>/dev/null || echo \"none\")
-              if [ \"\$STATE\" == \"rollback_completed\" ]; then
-                echo \"❌ ALERT: \$SERVICE Update FAILED!\"
-              elif [ \"\$STATE\" == \"completed\" ] || [ \"\$STATE\" == \"\" ] || [ \"\$STATE\" == \"none\" ]; then
-                echo \"✅ SUCCESS: \$SERVICE is updated.\"
-              fi
-            done
+            echo 'Deployment success. Check your site!'
           "
