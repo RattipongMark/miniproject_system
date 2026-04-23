@@ -18,5 +18,5 @@ module "compute" {
   nsg_id              = module.network.nsg_id
   vm_size             = var.vm_size
   admin_username      = var.admin_username
-  ssh_public_key_path = var.ssh_public_key_path
+  ssh_public_key      = var.ssh_public_key
 }

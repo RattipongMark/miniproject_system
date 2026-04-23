@@ -22,8 +22,8 @@ variable "admin_username" {
   default     = "starkadmin"
 }
 
-variable "ssh_public_key_path" {
-  description = "Path to the SSH public key"
+variable "ssh_public_key" {
+  description = "The content of the SSH public key"
   type        = string
-  default     = "/Users/mbmakk/.ssh/id_rsa.pub"
 }
+

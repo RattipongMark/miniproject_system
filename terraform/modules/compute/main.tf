@@ -5,7 +5,7 @@ variable "public_ip_id" { type = string }
 variable "nsg_id" { type = string }
 variable "vm_size" { type = string }
 variable "admin_username" { type = string }
-variable "ssh_public_key_path" { type = string }
+variable "ssh_public_key" { type = string }
 
 resource "azurerm_network_interface" "nic" {
   name                = "hero-nic"
@@ -37,7 +37,7 @@ resource "azurerm_linux_virtual_machine" "vm" {
 
   admin_ssh_key {
     username   = var.admin_username
-    public_key = file(var.ssh_public_key_path)
+    public_key = var.ssh_public_key
   }
 
   os_disk {
