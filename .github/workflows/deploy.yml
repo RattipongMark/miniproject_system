@@ -107,6 +107,11 @@ jobs:
 
             # Deploy or update the stack
             export REPO_NAME=${{ env.REPO_LOWER }}
+            
+            # 1. Force pull the latest images first
+            docker compose pull
+            
+            # 2. Deploy/Update the stack
             docker stack deploy -c ~/docker-compose.yml stark-app --with-registry-auth --prune
             
             # Wait for the service to be stable (Zero Downtime in progress)
