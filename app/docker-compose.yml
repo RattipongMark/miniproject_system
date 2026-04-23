@@ -1,5 +1,9 @@
 version: '3.8'
 
+networks:
+  public:
+    driver: overlay
+
 services:
   traefik:
     image: traefik:v2.10
@@ -7,11 +11,14 @@ services:
       - "--providers.docker=true"
       - "--providers.docker.swarmMode=true"
       - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=stark-app_public"
       - "--entrypoints.web.address=:80"
     ports:
       - "80:80"
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    networks:
+      - public
     deploy:
       placement:
         constraints:
@@ -19,9 +26,8 @@ services:
 
   frontend:
     image: ghcr.io/${REPO_NAME}/frontend:latest
-    # --- ปิด Healthcheck ไว้ก่อนเพื่อทดสอบ ---
-    # healthcheck:
-    #   test: ["CMD-SHELL", "wget -q --spider http://localhost/ || exit 1"]
+    networks:
+      - public
     deploy:
       replicas: 1
       update_config:
@@ -30,16 +36,24 @@ services:
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.frontend.rule=PathPrefix(`/`)"
+        - "traefik.http.routers.frontend.entrypoints=web"
         - "traefik.http.services.frontend.loadbalancer.server.port=80"
 
   backend:
     image: ghcr.io/${REPO_NAME}/backend:latest
     environment:
       - REDIS_HOST=db
+    networks:
+      - public
     deploy:
       replicas: 1
+      update_config:
+        parallelism: 1
+        order: start-first
 
   db:
     image: redis:alpine
+    networks:
+      - public
     deploy:
       replicas: 1
