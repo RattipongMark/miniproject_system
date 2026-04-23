@@ -1,14 +1,21 @@
 FROM nginx:alpine
+
+# Copy the static file
 COPY index.html /usr/share/nginx/html/index.html
-# Minimal nginx config to proxy API requests to backend
-RUN echo 'server { \
-    listen 80; \
-    location / { \
-        root /usr/share/nginx/html; \
-        index index.html; \
-    } \
-    location /api/ { \
-        proxy_pass http://backend:5000; \
-    } \
-}' > /etc/nginx/conf.d/default.conf
+
+# Write a clean nginx config
+# Using a variable for proxy_pass prevents nginx from crashing if backend is not yet ready
+RUN printf 'server {\n\
+    listen 80;\n\
+    location / {\n\
+        root /usr/share/nginx/html;\n\
+        index index.html;\n\
+    }\n\
+    location /api/ {\n\
+        resolver 127.0.0.11 valid=30s;\n\
+        set $upstream_backend backend;\n\
+        proxy_pass http://$upstream_backend:5000;\n\
+    }\n\
+}\n' > /etc/nginx/conf.d/default.conf
+
 EXPOSE 80
