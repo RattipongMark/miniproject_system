@@ -10,7 +10,6 @@ permissions:
   packages: write
 
 jobs:
-
   # 1. Build and push container images
   build-and-push:
     runs-on: ubuntu-latest
@@ -19,7 +18,6 @@ jobs:
       
       - name: Convert repository name to lowercase
         run: echo "REPO_LOWER=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
-
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v2
@@ -43,15 +41,13 @@ jobs:
           tags: ghcr.io/${{ env.REPO_LOWER }}/frontend:latest
 
   # 2. Provision Infrastructure and Configure Server
-  provision-and-config:
+  provision-infra:
     needs: build-and-push
     runs-on: ubuntu-latest
+    outputs:
+      public_ip: ${{ steps.terraform.outputs.PUBLIC_IP }}
     steps:
       - uses: actions/checkout@v3
-
-      - name: Convert repository name to lowercase
-        run: echo "REPO_LOWER=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
-
 
       - name: Azure Login
         uses: azure/login@v1
@@ -67,10 +63,7 @@ jobs:
         id: terraform
         run: |
           cd terraform
-          # Dynamically set the state key to the repository name
           terraform init -backend-config="key=${{ github.event.repository.name }}.tfstate"
-          
-          # Pass GitHub repo name and SSH public key
           terraform apply -auto-approve \
             -var="resource_group_name=rg-${{ github.event.repository.name }}" \
             -var="ssh_public_key=${{ secrets.SSH_PUBLIC_KEY }}"
@@ -83,29 +76,36 @@ jobs:
         run: |
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > private_key.pem
           chmod 600 private_key.pem
-          # Wait for SSH to be ready
           sleep 15
           ansible-playbook -i "${{ steps.terraform.outputs.PUBLIC_IP }}," \
             -u starkadmin --private-key private_key.pem \
             -e "ansible_ssh_common_args='-o StrictHostKeyChecking=no'" \
             ansible/playbook.yml
 
-      # 3. Deploy and Health Check (The Rollback Part)
-      - name: Deploy Application
+  # 3. Deploy Application and Health Check
+  deploy-app:
+    needs: [build-and-push, provision-infra]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Convert repository name to lowercase
+        run: echo "REPO_LOWER=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+
+      - name: Deploy to Server
         run: |
-          # Copy docker-compose.yml to the server
-          scp -o StrictHostKeyChecking=no -i private_key.pem app/docker-compose.yml starkadmin@${{ steps.terraform.outputs.PUBLIC_IP }}:~/docker-compose.yml
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > private_key.pem
+          chmod 600 private_key.pem
+          
+          # Copy docker-compose.yml
+          scp -o StrictHostKeyChecking=no -i private_key.pem app/docker-compose.yml starkadmin@${{ needs.provision-infra.outputs.public_ip }}:~/docker-compose.yml
           
           # Execute Deployment
-          ssh -o StrictHostKeyChecking=no -i private_key.pem starkadmin@${{ steps.terraform.outputs.PUBLIC_IP }} "
-            # Tag current containers as 'previous' for rollback
+          ssh -o StrictHostKeyChecking=no -i private_key.pem starkadmin@${{ needs.provision-infra.outputs.public_ip }} "
             docker tag ghcr.io/${{ env.REPO_LOWER }}/frontend:latest ghcr.io/${{ env.REPO_LOWER }}/frontend:previous || true
-            
-            # Pull and run new versions
             docker compose pull
             docker compose up -d
             
-            # Health Check
             echo 'Waiting for health check...'
             sleep 20
             if ! curl -s -f http://localhost/health > /dev/null; then
