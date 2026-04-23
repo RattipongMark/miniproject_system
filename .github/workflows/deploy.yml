@@ -35,14 +35,20 @@ jobs:
         with:
           context: ./app/backend
           push: true
-          tags: ghcr.io/${{ env.REPO_LOWER }}/backend:latest
+          # Use both 'latest' and 'commit sha' tags
+          tags: |
+            ghcr.io/${{ env.REPO_LOWER }}/backend:latest
+            ghcr.io/${{ env.REPO_LOWER }}/backend:${{ github.sha }}
 
       - name: Build and push Frontend
         uses: docker/build-push-action@v4
         with:
           context: ./app/frontend
           push: true
-          tags: ghcr.io/${{ env.REPO_LOWER }}/frontend:latest
+          # Use both 'latest' and 'commit sha' tags
+          tags: |
+            ghcr.io/${{ env.REPO_LOWER }}/frontend:latest
+            ghcr.io/${{ env.REPO_LOWER }}/frontend:${{ github.sha }}
 
   # 2. Provision Infrastructure and Configure Server
   provision-infra:
@@ -101,36 +107,24 @@ jobs:
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > private_key.pem
           chmod 600 private_key.pem
           
-          # Copy docker-compose.yml
+          # Inject the REAL image tag into docker-compose before sending
+          sed -i "s/\${REPO_NAME}/${{ env.REPO_LOWER }}/g" app/docker-compose.yml
+          sed -i "s/:latest/:${{ github.sha }}/g" app/docker-compose.yml
+          
+          # Copy injected docker-compose.yml
           scp -o StrictHostKeyChecking=no -i private_key.pem app/docker-compose.yml starkadmin@${{ needs.provision-infra.outputs.public_ip }}:~/docker-compose.yml
           
-          # Execute Deployment via Docker Swarm
+          # Execute Deployment
           ssh -o StrictHostKeyChecking=no -i private_key.pem starkadmin@${{ needs.provision-infra.outputs.public_ip }} "
-            # Login to GHCR (required for Swarm to pull images)
             echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-
-            # Deploy or update the stack
-            export REPO_NAME=${{ env.REPO_LOWER }}
-            
-            # 1. Force pull the latest images first
-            docker compose pull
-            
-            # 2. Deploy/Update the stack
             docker stack deploy -c ~/docker-compose.yml stark-app --with-registry-auth --prune
-
-            # 3. Force Update to ensure services pull the fresh image even if tag is the same
-            echo "Forcing service updates..."
-            docker service update --image ghcr.io/${REPO_NAME}/frontend:latest --force stark-app_frontend
-            docker service update --image ghcr.io/${REPO_NAME}/backend:latest --force stark-app_backend
             
-            # Wait for the service to be stable (Zero Downtime in progress)
-            echo 'Deployment ongoing (Swarm is handling the rolling update)...'
+            echo 'Deployment ongoing (Rolling update with specific SHA tag)...'
             sleep 30
             
-            # Final Status Check
             if ! docker stack ps stark-app | grep -E 'Running|Complete'; then
               echo 'ALERT: Deployment state looks unstable!'
               exit 1
             fi
-            echo 'Deployment successful and stable!'
+            echo 'Deployment successful!'
           "
