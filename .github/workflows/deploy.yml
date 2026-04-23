@@ -102,10 +102,18 @@ jobs:
           
           # Execute Deployment
           ssh -o StrictHostKeyChecking=no -i private_key.pem starkadmin@${{ needs.provision-infra.outputs.public_ip }} "
+            # Login to GHCR so the VM can pull private images
+            echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+            # Tag current containers as 'previous' for rollback
             docker tag ghcr.io/${{ env.REPO_LOWER }}/frontend:latest ghcr.io/${{ env.REPO_LOWER }}/frontend:previous || true
+            
+            # Pull and run new versions using the lowercase repo name
+            export REPO_NAME=${{ env.REPO_LOWER }}
             docker compose pull
             docker compose up -d
             
+            # Health Check
             echo 'Waiting for health check...'
             sleep 20
             if ! curl -s -f http://localhost/health > /dev/null; then
