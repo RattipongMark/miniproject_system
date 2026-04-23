@@ -1,0 +1,98 @@
+name: Hub of Heroes CI/CD
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  # 1. Build and push container images
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Backend
+        uses: docker/build-push-action@v4
+        with:
+          context: ./app/backend
+          push: true
+          tags: ghcr.io/${{ github.repository }}/backend:latest
+
+      - name: Build and push Frontend
+        uses: docker/build-push-action@v4
+        with:
+          context: ./app/frontend
+          push: true
+          tags: ghcr.io/${{ github.repository }}/frontend:latest
+
+  # 2. Provision Infrastructure and Configure Server
+  provision-and-config:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+
+      - name: Terraform Init & Apply
+        id: terraform
+        run: |
+          cd terraform
+          terraform init
+          # Pass GitHub repo name as the resource group name prefix
+          terraform apply -auto-approve -var="resource_group_name=rg-${{ github.event.repository.name }}"
+          echo "PUBLIC_IP=$(terraform output -raw public_ip_address)" >> $GITHUB_OUTPUT
+
+      - name: Setup Ansible
+        run: pip install ansible
+
+      - name: Run Ansible Playbook
+        run: |
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > private_key.pem
+          chmod 600 private_key.pem
+          # Wait for SSH to be ready
+          sleep 15
+          ansible-playbook -i "${{ steps.terraform.outputs.PUBLIC_IP }}," \
+            -u starkadmin --private-key private_key.pem \
+            -e "ansible_ssh_common_args='-o StrictHostKeyChecking=no'" \
+            ansible/playbook.yml
+
+      # 3. Deploy and Health Check (The Rollback Part)
+      - name: Deploy Application
+        run: |
+          # Copy docker-compose.yml to the server
+          scp -o StrictHostKeyChecking=no -i private_key.pem app/docker-compose.yml starkadmin@${{ steps.terraform.outputs.PUBLIC_IP }}:~/docker-compose.yml
+          
+          # Execute Deployment
+          ssh -o StrictHostKeyChecking=no -i private_key.pem starkadmin@${{ steps.terraform.outputs.PUBLIC_IP }} "
+            # Tag current containers as 'previous' for rollback
+            docker tag ghcr.io/${{ github.repository }}/frontend:latest ghcr.io/${{ github.repository }}/frontend:previous || true
+            
+            # Pull and run new versions
+            docker compose pull
+            docker compose up -d
+            
+            # Health Check
+            echo 'Waiting for health check...'
+            sleep 20
+            if ! curl -s -f http://localhost/health > /dev/null; then
+              echo 'ALERT: Health check failed! Rolling back...'
+              docker tag ghcr.io/${{ github.repository }}/frontend:previous ghcr.io/${{ github.repository }}/frontend:latest
+              docker compose up -d
+              exit 1
+            fi
+            echo 'Deployment successful!'
+          "

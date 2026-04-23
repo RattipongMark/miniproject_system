@@ -1,0 +1,6 @@
+---
+- name: Configure Stark Hero Host
+  hosts: all
+  become: yes
+  roles:
+    - docker

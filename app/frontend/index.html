@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Stark Hero Hub</title>
+    <style>
+        body { font-family: sans-serif; background: #1a1a1a; color: #ff3333; text-align: center; padding: 50px; }
+        .card { background: #2a2a2a; border-radius: 15px; padding: 20px; display: inline-block; box-shadow: 0 0 20px #ff3333; }
+        h1 { margin-bottom: 30px; }
+        .stat { font-size: 24px; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>STARK INDUSTRY: SUIT ANALYSIS</h1>
+        <div id="content">
+            <p>Loading diagnostics...</p>
+        </div>
+    </div>
+
+    <script>
+        fetch('/api/stats')
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('content').innerHTML = `
+                    <div class="stat">Total Suits: ${data.suit_count}</div>
+                    <div class="stat">Active Mission: ${data.active_mission}</div>
+                    <div class="stat">Total Analysis Run: ${data.total_analysis_count}</div>
+                    <div class="stat" style="color: #66ff66;">Status: ${data.status}</div>
+                `;
+            });
+    </script>
+</body>
+</html>

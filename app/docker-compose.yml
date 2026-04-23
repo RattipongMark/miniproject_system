@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  frontend:
+    image: ghcr.io/${GITHUB_REPOSITORY}/frontend:latest
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: always
+
+  backend:
+    image: ghcr.io/${GITHUB_REPOSITORY}/backend:latest
+    environment:
+      - REDIS_HOST=db
+    depends_on:
+      - db
+    restart: always
+
+  db:
+    image: redis:alpine
+    restart: always
