@@ -1,0 +1,32 @@
+name: Destroy Infrastructure
+
+on:
+  workflow_dispatch:
+    # This allows the developer to manually trigger the destruction from the Actions tab
+
+jobs:
+  destroy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_wrapper: false
+
+      - name: Terraform Destroy
+        run: |
+          cd terraform
+          # Initialize using the same remote state as deployment
+          terraform init -backend-config="key=${{ github.event.repository.name }}.tfstate"
+          
+          # Run destroy with required variables
+          terraform destroy -auto-approve \
+            -var="resource_group_name=rg-${{ github.event.repository.name }}" \
+            -var="ssh_public_key=${{ secrets.SSH_PUBLIC_KEY }}"

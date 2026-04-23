@@ -108,8 +108,8 @@ jobs:
           chmod 600 private_key.pem
           
           # Inject the REAL image tag into docker-compose before sending
-          sed -i "s/\${REPO_NAME}/${{ env.REPO_LOWER }}/g" app/docker-compose.yml
-          sed -i "s/:latest/:${{ github.sha }}/g" app/docker-compose.yml
+          sed -i "s|\${REPO_NAME}|${{ env.REPO_LOWER }}|g" app/docker-compose.yml
+          sed -i "s|:latest|:${{ github.sha }}|g" app/docker-compose.yml
           
           # Copy injected docker-compose.yml
           scp -o StrictHostKeyChecking=no -i private_key.pem app/docker-compose.yml starkadmin@${{ needs.provision-infra.outputs.public_ip }}:~/docker-compose.yml
@@ -119,12 +119,26 @@ jobs:
             echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker stack deploy -c ~/docker-compose.yml stark-app --with-registry-auth --prune
             
-            echo 'Deployment ongoing (Rolling update with specific SHA tag)...'
-            sleep 30
+            echo 'Deployment ongoing (Swarm is handling the rolling update)...'
+            sleep 40
+            
+            # --- Smart Status Report ---
+            echo '--- Deployment Report ---'
+            SERVICES=("stark-app_frontend" "stark-app_backend")
+            for SERVICE in "${SERVICES[@]}"; do
+              STATE=$(docker service inspect $SERVICE --format '{{.UpdateStatus.State}}')
+              if [ "$STATE" == "rollback_completed" ]; then
+                echo "❌ ALERT: $SERVICE Update FAILED! (Rolled back to previous version)"
+              elif [ "$STATE" == "completed" ] || [ "$STATE" == "" ] || [ "$STATE" == "none" ]; then
+                echo "✅ SUCCESS: $SERVICE is healthy and running the new version."
+              else
+                echo "⚠️ WARNING: $SERVICE state is $STATE. Please check manually."
+              fi
+            done
             
             if ! docker stack ps stark-app | grep -E 'Running|Complete'; then
-              echo 'ALERT: Deployment state looks unstable!'
+              echo 'ERROR: Stack state looks unstable!'
               exit 1
             fi
-            echo 'Deployment successful!'
+            echo '--- End of Report ---'
           "
