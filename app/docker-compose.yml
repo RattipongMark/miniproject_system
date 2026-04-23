@@ -1,7 +1,6 @@
 version: '3.8'
 
 services:
-  # --- The Gatekeeper (Reverse Proxy) ---
   traefik:
     image: traefik:v2.10
     command:
@@ -18,24 +17,16 @@ services:
         constraints:
           - node.role == manager
 
-  # --- Your App (Now with Zero-Downtime support) ---
   frontend:
     image: ghcr.io/${REPO_NAME}/frontend:latest
-    # No direct ports! Traefik will handle the traffic
-    depends_on:
-      - backend
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost/ || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
+    # --- ปิด Healthcheck ไว้ก่อนเพื่อทดสอบ ---
+    # healthcheck:
+    #   test: ["CMD-SHELL", "wget -q --spider http://localhost/ || exit 1"]
     deploy:
       replicas: 1
       update_config:
         parallelism: 1
         order: start-first
-        failure_action: rollback
-        delay: 5s
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.frontend.rule=PathPrefix(`/`)"
@@ -45,20 +36,8 @@ services:
     image: ghcr.io/${REPO_NAME}/backend:latest
     environment:
       - REDIS_HOST=db
-    depends_on:
-      - db
-    healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost 5000 || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
     deploy:
       replicas: 1
-      update_config:
-        parallelism: 1
-        order: start-first
-        failure_action: rollback
-        delay: 5s
 
   db:
     image: redis:alpine
