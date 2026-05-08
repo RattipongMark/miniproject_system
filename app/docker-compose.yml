@@ -27,6 +27,14 @@ services:
       update_config:
         parallelism: 1
         order: start-first
+        failure_action: rollback
+        monitor: 30s
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   backend:
     image: ghcr.io/${REPO_NAME}/backend:latest
@@ -36,6 +44,18 @@ services:
       - public
     deploy:
       replicas: 1
+      update_config:
+        parallelism: 1
+        order: start-first
+        failure_action: rollback
+        monitor: 30s
+        max_failure_ratio: 0.1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   db:
     image: redis:alpine
