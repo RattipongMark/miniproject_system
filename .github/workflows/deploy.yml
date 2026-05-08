@@ -144,17 +144,17 @@ jobs:
       - name: Health Check
         id: health_check
         run: |
-          echo "Waiting for app to start..."
-          sleep 30
-          MAX_RETRIES=5
+          echo "Waiting for services to be ready..."
+          sleep 45
+          MAX_RETRIES=10
           COUNT=0
           while [ $COUNT -lt $MAX_RETRIES ]; do
             if curl -s -f http://${{ steps.ip.outputs.PUBLIC_IP }}/ > /dev/null; then
               echo "Health check passed!"
               exit 0
             fi
-            echo "Health check failed, retrying in 10s... ($((COUNT+1))/$MAX_RETRIES)"
-            sleep 10
+            echo "Health check failed, retrying in 15s... ($((COUNT+1))/$MAX_RETRIES)"
+            sleep 15
             COUNT=$((COUNT+1))
           done
           echo "Health check failed after $MAX_RETRIES retries!"
@@ -163,10 +163,11 @@ jobs:
       - name: Rollback on Failure
         if: failure() && steps.deploy.outcome == 'success'
         run: |
-          echo "Initiating automated rollback..."
+          echo "Initiating automated rollback for key services..."
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > private_key.pem
           chmod 600 private_key.pem
           ssh -o StrictHostKeyChecking=no -i private_key.pem starkadmin@${{ steps.ip.outputs.PUBLIC_IP }} "
-            docker stack rollback stark-app
+            docker service rollback stark-app_frontend
+            docker service rollback stark-app_backend
           "
-          echo "Rollback completed."
+          echo "Rollback initiated."
