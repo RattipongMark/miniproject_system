@@ -89,6 +89,8 @@ jobs:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_wrapper: false
       - name: Terraform Apply
         run: |
           cd terraform
@@ -98,7 +100,7 @@ jobs:
         run: pip install ansible
       - name: Run Playbook
         run: |
-          PUBLIC_IP=$(cd terraform && terraform output -raw public_ip_address)
+          PUBLIC_IP=$(cd terraform && terraform output -raw public_ip_address | tr -d '[:space:]:')
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > private_key.pem
           chmod 600 private_key.pem
           ansible-playbook -i "$PUBLIC_IP," -u starkadmin --private-key private_key.pem -e "ansible_ssh_common_args='-o StrictHostKeyChecking=no'" ansible/playbook.yml
