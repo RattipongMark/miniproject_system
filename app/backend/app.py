@@ -2,6 +2,9 @@ from flask import Flask, jsonify
 from redis import Redis
 import os
 
+raise Exception("STARK SYSTEM MALFUNCTION!!!")
+
+
 app = Flask(__name__)
 redis = Redis(host='db', port=6379)
 
