@@ -1,3 +1,9 @@
+variable "project_name" {
+  description = "Prefix for all resources to identify the team/project"
+  type        = string
+  default     = "stark-hero"
+}
+
 variable "resource_group_name" {
   description = "Name of the resource group"
   type        = string

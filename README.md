@@ -1,38 +1,60 @@
 # 🛡️ Stark Hero Hub: Platform Engineering
-Welcome to the standardized internal platform for deploying **Suit Analysis** applications.
+Welcome to the standardized internal platform for deploying **Suit Analysis** applications. This repository provides a "Golden Path" for engineers to provision, configure, and deploy secure infrastructure automatically.
 
-## 🚀 สำหรับวิศวกร (Developer Onboarding)
-หากคุณได้รับมอบหมายให้พัฒนาแอปวิเคราะห์ชุดเกราะใหม่ (Suit Analysis) ให้ปฏิบัติตาม **Golden Path** ดังนี้:
+## 🚀 New Team Onboarding
+If your team is assigned to develop a new Suit Analysis app, follow these steps to get started:
 
-### 1. เริ่มต้นโครงการ
-- กดปุ่ม **"Use this template"** ที่หน้า GitHub นี้เพื่อสร้าง Repository ใหม่ของคุณเอง
+### 1. Template Initialization
+- Click the **"Use this template"** button to create your own repository.
+- Navigate to `terraform/variables.tf` and update the `project_name` variable to your team's specific name (e.g., `stark-mark-42`).
+  > [!IMPORTANT]
+  > Using a unique `project_name` prevents resource naming collisions when multiple teams deploy to the same Azure subscription.
 
-### 2. ตั้งค่าความปลอดภัย (GitHub Secrets)
-ไปที่ `Settings > Secrets and variables > Actions` และเพิ่ม Secrets ต่อไปนี้ (ขอรับกุญแจได้ที่ทีม Platform):
-- `AZURE_CREDENTIALS`: สิทธิ์เข้าถึง Azure Cloud
-- `SSH_PRIVATE_KEY`: กุญแจส่วนตัวสำหรับจัดการ Server
+### 2. Security Configuration (GitHub Secrets)
+Go to `Settings > Secrets and variables > Actions` and add the following secrets:
+- `AZURE_CREDENTIALS`: Azure Service Principal JSON (Request from the Platform Team).
+- `SSH_PUBLIC_KEY`: The public key to be injected into the VM.
+- `SSH_PRIVATE_KEY`: The private key used by GitHub Actions for application deployment.
+- `AZURE_STORAGE_ACCESS_KEY`: (Optional) For remote Terraform state management.
 
-### 3. พัฒนาแอปของคุณ
-- เขียนโค้ดแอปของคุณในโฟลเดอร์ `/app/backend` และ `/app/frontend`
-- หากมีการใช้ Library เพิ่มเติม ให้ระบุใน `requirements.txt`
-- **ข้อกำหนด:** แอปต้องมี Endpoint `/health` สำหรับตรวจสอบสถานะ (Health Check)
+### 3. Application Preparation
+- Place your Backend/Frontend code inside the `/app` directory.
+- **Requirement:** Your application must listen on **Port 80** and provide a health check endpoint (e.g., `/`) for the **Auto-Rollback** mechanism to function.
 
-### 4. การ Deployment
-- เพียงแค่คุณ **`git push origin main`**
-- ระบบ GitHub Actions จะทำการ **Build, Provision และ Deploy** ให้คุณโดยอัตโนมัติ 100%
-- หากแอปเวอร์ชันใหม่มีปัญหา ระบบจะทำการ **Rollback** กลับไปยังเวอร์ชันก่อนหน้าทันที
+### 4. Deployment & Monitoring
+- Simply **`git push origin main`** to trigger the automated 4-stage pipeline:
+  1. **Build:** Container images are built and pushed to GHCR.
+  2. **Provision:** Infrastructure is created/updated via Terraform.
+  3. **Harden:** Security baseline and Docker runtime are applied via Ansible.
+  4. **Deploy:** Application is deployed with a mandatory **Health Check**.
+- **Automated Rollback:** If the health check fails 5 times post-deployment, the system will automatically trigger a `docker stack rollback` to the last stable version.
+
+---
+
+## 💰 Resource Cost Breakdown (Target: $0)
+To comply with the CTO's zero-budget mandate, we utilize the following **Azure Free Tier** resources:
+
+| Resource | Service Type | Size/SKU | Estimated Cost | Free Tier Logic |
+| :--- | :--- | :--- | :--- | :--- |
+| **Compute** | Linux VM | Standard_B1s | $0.00 | Free for 12 months (750 hrs/mo) |
+| **Storage** | Managed Disk | 64GB (P6) | $0.00 | Free for 12 months (2x disks) |
+| **IP Address** | Public IP | Basic/Standard | $0.00 | Free while VM is running |
+| **Network** | VNET/NSG | Standard | $0.00 | Included with Subscription |
+| **Security** | UFW/Ansible | - | $0.00 | Open Source / No License Cost |
+| **Total** | | | **$0.00 / mo** | |
 
 ---
 
-## 🏗️ โครงสร้างแพลตฟอร์ม (Platform Overview)
-- `terraform/`: จัดการ Infrastructure คลุมด้วยระบบ VNET/Subnet และ NSG
-- `ansible/`: จัดการ Configuration ติดตั้ง Docker & Security Baseline
-- `app/`: โครงสร้างแอปมาตรฐานแบบ 3-Tier (Frontend, Backend, Redis)
-- `.github/workflows/`: ระบบ CI/CD และระบบ Auto-Rollback
+## 🏗️ Platform Components
+- `terraform/`: **Infrastructure as Code** (IAC) for automated network and server provisioning.
+- `ansible/`: **Configuration Management** for security hardening and runtime installation.
+- `app/`: Standardized containerized application structure.
+- `.github/workflows/`: Full CI/CD Pipeline with **Automated Rollback** logic.
 
-## 🛡️ มาตรฐานความปลอดภัย
-- **No Manual Change:** ห้ามแก้ไขหน้า Console หรือ SSH เข้าไปแก้ด้วยมือเด็ดขาด
-- **Infrastructure as Code:** ทุกอย่างต้องถูกบันทึกและตรวจสอบได้ผ่าน Git เท่านั้น
+## 🛡️ Mandatory Policies
+1. **100% IAC:** Manual changes via the Azure Console are strictly prohibited. All changes must be defined in Terraform.
+2. **Standardized Naming:** All resources MUST be prefixed with the `project_name` to ensure isolation.
+3. **Immutable Deployments:** No manual SSH patching. Every update must go through the CI/CD pipeline.
 
 ---
-*Created by the Stark Industry Platform Engineering Team.*
+*Created by the Stark Industry Platform Engineering Team. For internal use only.*

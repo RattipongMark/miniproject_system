@@ -127,14 +127,44 @@ jobs:
           terraform init -backend-config="key=${{ github.event.repository.name }}.tfstate"
           echo "PUBLIC_IP=$(terraform output -raw public_ip_address)" >> $GITHUB_OUTPUT
       - name: Deploy
+        id: deploy
         run: |
+          echo "${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin" > deploy_script.sh
+          echo "sed -i 's|\${REPO_NAME}|${{ env.REPO_LOWER }}|g' ~/docker-compose.yml" >> deploy_script.sh
+          echo "sed -i 's|:latest|:${{ github.sha }}|g' ~/docker-compose.yml" >> deploy_script.sh
+          echo "docker stack deploy -c ~/docker-compose.yml stark-app --with-registry-auth --prune" >> deploy_script.sh
+          
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > private_key.pem
           chmod 600 private_key.pem
-          sed -i "s|\${REPO_NAME}|${{ env.REPO_LOWER }}|g" app/docker-compose.yml
-          sed -i "s|:latest|:${{ github.sha }}|g" app/docker-compose.yml
           scp -o StrictHostKeyChecking=no -i private_key.pem app/docker-compose.yml starkadmin@${{ steps.ip.outputs.PUBLIC_IP }}:~/docker-compose.yml
+          ssh -o StrictHostKeyChecking=no -i private_key.pem starkadmin@${{ steps.ip.outputs.PUBLIC_IP }} < deploy_script.sh
+
+      - name: Health Check
+        id: health_check
+        run: |
+          echo "Waiting for app to start..."
+          sleep 30
+          MAX_RETRIES=5
+          COUNT=0
+          while [ $COUNT -lt $MAX_RETRIES ]; do
+            if curl -s -f http://${{ steps.ip.outputs.PUBLIC_IP }}/ > /dev/null; then
+              echo "Health check passed!"
+              exit 0
+            fi
+            echo "Health check failed, retrying in 10s... ($((COUNT+1))/$MAX_RETRIES)"
+            sleep 10
+            COUNT=$((COUNT+1))
+          done
+          echo "Health check failed after $MAX_RETRIES retries!"
+          exit 1
+
+      - name: Rollback on Failure
+        if: failure() && steps.deploy.outcome == 'success'
+        run: |
+          echo "Initiating automated rollback..."
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > private_key.pem
+          chmod 600 private_key.pem
           ssh -o StrictHostKeyChecking=no -i private_key.pem starkadmin@${{ steps.ip.outputs.PUBLIC_IP }} "
-            echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-            docker stack deploy -c ~/docker-compose.yml stark-app --with-registry-auth --prune
-            echo 'Deployment success. Check your site!'
+            docker stack rollback stark-app
           "
+          echo "Rollback completed."

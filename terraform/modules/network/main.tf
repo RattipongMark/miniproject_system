@@ -1,22 +1,23 @@
 variable "resource_group_name" { type = string }
 variable "location" { type = string }
+variable "project_name" { type = string }
 
 resource "azurerm_virtual_network" "vnet" {
-  name                = "hero-vnet"
+  name                = "${var.project_name}-vnet"
   address_space       = ["10.0.0.0/16"]
   location            = var.location
   resource_group_name = var.resource_group_name
 }
 
 resource "azurerm_subnet" "subnet" {
-  name                 = "internal"
+  name                 = "${var.project_name}-internal-subnet"
   resource_group_name  = var.resource_group_name
   virtual_network_name = azurerm_virtual_network.vnet.name
   address_prefixes     = ["10.0.2.0/24"]
 }
 
 resource "azurerm_public_ip" "pip" {
-  name                = "hero-public-ip"
+  name                = "${var.project_name}-public-ip"
   location            = var.location
   resource_group_name = var.resource_group_name
   allocation_method   = "Static"
@@ -24,7 +25,7 @@ resource "azurerm_public_ip" "pip" {
 }
 
 resource "azurerm_network_security_group" "nsg" {
-  name                = "hero-nsg"
+  name                = "${var.project_name}-nsg"
   location            = var.location
   resource_group_name = var.resource_group_name
 

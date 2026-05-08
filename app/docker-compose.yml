@@ -12,13 +12,12 @@ services:
       - "--providers.docker.swarmMode=true"
       - "--providers.docker.exposedbydefault=false"
       - "--entrypoints.web.address=:80"
+
+      - "--providers.docker.apiVersion=1.41"
     ports:
       - "80:80"
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
-    # --- เพิ่มบรรทัดนี้เพื่อแก้ปัญหา API Version ---
-    environment:
-      - DOCKER_API_VERSION=1.41
     networks:
       - public
     deploy:
@@ -40,6 +39,7 @@ services:
         - "traefik.http.routers.frontend.rule=PathPrefix(`/`)"
         - "traefik.http.routers.frontend.entrypoints=web"
         - "traefik.http.services.frontend.loadbalancer.server.port=80"
+        - "traefik.docker.network=stark-app_public"
 
   backend:
     image: ghcr.io/${REPO_NAME}/backend:latest

@@ -6,9 +6,10 @@ variable "nsg_id" { type = string }
 variable "vm_size" { type = string }
 variable "admin_username" { type = string }
 variable "ssh_public_key" { type = string }
+variable "project_name" { type = string }
 
 resource "azurerm_network_interface" "nic" {
-  name                = "hero-nic"
+  name                = "${var.project_name}-nic"
   location            = var.location
   resource_group_name = var.resource_group_name
 
@@ -26,7 +27,7 @@ resource "azurerm_network_interface_security_group_association" "assoc" {
 }
 
 resource "azurerm_linux_virtual_machine" "vm" {
-  name                = "stark-hero-host"
+  name                = "${var.project_name}-vm"
   resource_group_name = var.resource_group_name
   location            = var.location
   size                = var.vm_size

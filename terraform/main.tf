@@ -7,6 +7,7 @@ module "network" {
   source              = "./modules/network"
   resource_group_name = azurerm_resource_group.hero_hub.name
   location            = azurerm_resource_group.hero_hub.location
+  project_name        = var.project_name
 }
 
 module "compute" {
@@ -19,4 +20,5 @@ module "compute" {
   vm_size             = var.vm_size
   admin_username      = var.admin_username
   ssh_public_key      = var.ssh_public_key
+  project_name        = var.project_name
 }
