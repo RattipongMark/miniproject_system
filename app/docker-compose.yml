@@ -5,18 +5,12 @@ networks:
     driver: overlay
 
 services:
-  traefik:
-    image: traefik:v2.10
-    environment:
-      - TRAEFIK_PROVIDERS_DOCKER=true
-      - TRAEFIK_PROVIDERS_DOCKER_SWARMMODE=true
-      - TRAEFIK_PROVIDERS_DOCKER_EXPOSEDBYDEFAULT=false
-      - TRAEFIK_PROVIDERS_DOCKER_APIVERSION=1.40
-      - TRAEFIK_ENTRYPOINTS_WEB_ADDRESS=:80
+  nginx:
+    image: nginx:alpine
     ports:
       - "80:80"
     volumes:
-      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
     networks:
       - public
     deploy:
@@ -33,12 +27,6 @@ services:
       update_config:
         parallelism: 1
         order: start-first
-      labels:
-        - "traefik.enable=true"
-        - "traefik.http.routers.frontend.rule=PathPrefix(`/`)"
-        - "traefik.http.routers.frontend.entrypoints=web"
-        - "traefik.http.services.frontend.loadbalancer.server.port=80"
-        - "traefik.docker.network=stark-app_public"
 
   backend:
     image: ghcr.io/${REPO_NAME}/backend:latest
