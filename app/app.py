@@ -9,7 +9,7 @@ APP_VERSION = "1.0.0"
 @app.route('/')
 def home():
     return f"""
-    <h1>Stark Industry: Suit Analysis Platform</h1>
+    <h1>Stark Industry SUN: Suit Analysis Platform</h1>
     <p>Version: {APP_VERSION}</p>
     <p>Status: <span style='color: green;'>Online</span></p>
     <hr>
