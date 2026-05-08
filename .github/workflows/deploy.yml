@@ -152,8 +152,16 @@ jobs:
           ssh -o StrictHostKeyChecking=no -i private_key.pem starkadmin@${{ steps.ip.outputs.PUBLIC_IP }} "
             echo '--- Service List ---'
             docker service ls
+            echo '--- Rollback Status Check ---'
+            for svc in \$(docker service ls --format '{{.Name}}'); do
+              STATUS=\$(docker service inspect --format '{{.UpdateStatus.State}}' \$svc 2>/dev/null || echo 'none')
+              echo \"Service \$svc status: \$STATUS\"
+              if [ \"\$STATUS\" == \"rollback_started\" ] || [ \"\$STATUS\" == \"rollback_completed\" ]; then
+                echo \"[WARNING] Automatic Rollback detected for \$svc!\"
+              fi
+            done
             echo '--- Detailed Tasks ---'
-            docker service ps stark-app_nginx stark-app_frontend --no-trunc
+            docker service ps stark-app_nginx stark-app_frontend stark-app_backend --no-trunc | head -n 20
           "
 
       - name: Health Check
