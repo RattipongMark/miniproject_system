@@ -160,8 +160,8 @@ jobs:
         id: health_check
         run: |
           echo "Waiting for services to be ready..."
-          sleep 45
-          MAX_RETRIES=10
+          sleep 10
+          MAX_RETRIES=5
           COUNT=0
           while [ $COUNT -lt $MAX_RETRIES ]; do
             ROOT_OK=0
