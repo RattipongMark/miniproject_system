@@ -26,9 +26,20 @@ Go to `Settings > Secrets and variables > Actions` and add the following secrets
   1. **Build:** Container images are built and pushed to GHCR.
   2. **Provision:** Infrastructure is created/updated via Terraform.
   3. **Harden:** Security baseline and Docker runtime are applied via Ansible.
-  4. **Deploy:** Application is deployed with a mandatory **Health Check**.
-- **Automated Rollback:** If the health check fails 5 times post-deployment, the system will automatically trigger a `docker stack rollback` to the last stable version.
+  4. **Deploy:** Application is deployed using **Nginx Reverse Proxy** and **Docker Swarm**.
+- **Zero-Downtime Rollback:** We use a dual-layer rollback system:
+  - **Native Swarm Check:** Docker monitors the container's `/health` endpoint during the update.
+  - **GHA External Check:** GitHub Actions verifies the platform's accessibility from the outside. If either fails, the system automatically triggers a `docker service rollback`.
 
+---
+
+## 📊 System Architecture
+![System Architecture](diagrams/system.drawio.png)
+
+---
+
+## ⚙️ CI/CD Pipeline Workflow
+![CI/CD Pipeline](diagrams/sytem_pipeline.png)
 ---
 
 ## 💰 Resource Cost Breakdown (Target: $0)
