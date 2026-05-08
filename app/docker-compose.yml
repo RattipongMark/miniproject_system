@@ -7,14 +7,12 @@ networks:
 services:
   traefik:
     image: traefik:v2.10
-    command:
-      - "--providers.docker=true"
-      - "--providers.docker.swarmMode=true"
-      - "--providers.docker.exposedbydefault=false"
-      - "--entrypoints.web.address=:80"
-
     environment:
-      - DOCKER_API_VERSION=1.41
+      - TRAEFIK_PROVIDERS_DOCKER=true
+      - TRAEFIK_PROVIDERS_DOCKER_SWARMMODE=true
+      - TRAEFIK_PROVIDERS_DOCKER_EXPOSEDBYDEFAULT=false
+      - TRAEFIK_PROVIDERS_DOCKER_APIVERSION=1.40
+      - TRAEFIK_ENTRYPOINTS_WEB_ADDRESS=:80
     ports:
       - "80:80"
     volumes:

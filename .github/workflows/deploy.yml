@@ -141,6 +141,20 @@ jobs:
           scp -o StrictHostKeyChecking=no -i private_key.pem app/docker-compose.yml starkadmin@${{ steps.ip.outputs.PUBLIC_IP }}:~/docker-compose.yml
           ssh -o StrictHostKeyChecking=no -i private_key.pem starkadmin@${{ steps.ip.outputs.PUBLIC_IP }} < deploy_script.sh
 
+      - name: Monitor Service Status
+        run: |
+          echo "Waiting for services to settle..."
+          sleep 30
+          echo "Current Service Status:"
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > private_key.pem
+          chmod 600 private_key.pem
+          ssh -o StrictHostKeyChecking=no -i private_key.pem starkadmin@${{ steps.ip.outputs.PUBLIC_IP }} "
+            echo '--- Service List ---'
+            docker service ls
+            echo '--- Detailed Tasks ---'
+            docker service ps stark-app_traefik stark-app_frontend --no-trunc
+          "
+
       - name: Health Check
         id: health_check
         run: |
