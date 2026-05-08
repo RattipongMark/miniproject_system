@@ -164,11 +164,16 @@ jobs:
           MAX_RETRIES=10
           COUNT=0
           while [ $COUNT -lt $MAX_RETRIES ]; do
-            if curl -s -f http://${{ steps.ip.outputs.PUBLIC_IP }}/ > /dev/null; then
-              echo "Health check passed!"
+            ROOT_OK=0
+            API_OK=0
+            curl -s -f http://${{ steps.ip.outputs.PUBLIC_IP }}/ > /dev/null && ROOT_OK=1
+            curl -s -f http://${{ steps.ip.outputs.PUBLIC_IP }}/api/stats > /dev/null && API_OK=1
+            
+            if [ $ROOT_OK -eq 1 ] && [ $API_OK -eq 1 ]; then
+              echo "Full Health Check Passed! All systems are green."
               exit 0
             fi
-            echo "Health check failed, retrying in 15s... ($((COUNT+1))/$MAX_RETRIES)"
+            echo "Health Check status: Root=$ROOT_OK, API=$API_OK. Retrying in 15s... ($((COUNT+1))/$MAX_RETRIES)"
             sleep 15
             COUNT=$((COUNT+1))
           done
