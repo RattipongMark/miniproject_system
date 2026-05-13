@@ -67,5 +67,3 @@ To comply with the CTO's zero-budget mandate, we utilize the following **Azure F
 2. **Standardized Naming:** All resources MUST be prefixed with the `project_name` to ensure isolation.
 3. **Immutable Deployments:** No manual SSH patching. Every update must go through the CI/CD pipeline.
 
----
-*Created by the Stark Industry Platform Engineering Team. For internal use only.*
