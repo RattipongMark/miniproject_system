@@ -2,7 +2,7 @@ from flask import Flask, jsonify
 from redis import Redis
 import os
 
-raise Exception("STARK SYSTEM MALFUNCTION!!!")
+# raise Exception("STARK SYSTEM MALFUNCTION!!!")
 
 
 app = Flask(__name__)
