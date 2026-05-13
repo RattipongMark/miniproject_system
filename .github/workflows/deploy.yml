@@ -169,7 +169,7 @@ jobs:
         run: |
           echo "Waiting for services to be ready..."
           sleep 10
-          MAX_RETRIES=5
+          MAX_RETRIES=10
           COUNT=0
           while [ $COUNT -lt $MAX_RETRIES ]; do
             ROOT_OK=0
